@@ -2,67 +2,82 @@ package com.plusonelabs.calendar;
 
 import android.annotation.TargetApi;
 import android.appwidget.AppWidgetManager;
+import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
 import android.os.Bundle;
 import android.preference.PreferenceActivity;
-import android.util.TypedValue;
-import android.view.View;
-import android.view.View.OnClickListener;
-import android.widget.Button;
-import android.widget.LinearLayout;
+import android.support.annotation.NonNull;
+
+import com.plusonelabs.calendar.prefs.ApplicationPreferences;
+import com.plusonelabs.calendar.util.PermissionsUtil;
 
 import java.util.List;
-
-import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;
 
 public class WidgetConfigurationActivity extends PreferenceActivity {
 
     private static final String PREFERENCES_PACKAGE_NAME = "com.plusonelabs.calendar.prefs";
+    private int widgetId = 0;
 
-    private int appWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID;
+    @NonNull
+    public static Intent intentToStartMe(Context context, int widgetId) {
+        Intent intent = new Intent(context, WidgetConfigurationActivity.class);
+        intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP + Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS);
+        intent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId);
+        return intent;
+    }
 
     @Override
-    public void onCreate(Bundle savedInstanceState) {
+    protected void onPause() {
+        super.onPause();
+        ApplicationPreferences.save(this, widgetId);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        restartIfNeeded();
+    }
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        prepareForNewIntent(getIntent());
         super.onCreate(savedInstanceState);
-        Bundle extras = getIntent().getExtras();
-        if (extras != null) {
-            appWidgetId = extras.getInt(AppWidgetManager.EXTRA_APPWIDGET_ID,
-                    AppWidgetManager.INVALID_APPWIDGET_ID);
+    }
+
+    private void prepareForNewIntent(Intent newIntent) {
+        int newWidgetId = newIntent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, 0);
+        if (newWidgetId == 0) {
+            newWidgetId = ApplicationPreferences.getWidgetId(this);
         }
-        if (hasHeaders() && appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
-            createAddButton();
+        Intent restartIntent = null;
+        if (newWidgetId == 0 || !PermissionsUtil.arePermissionsGranted(this)) {
+            restartIntent = MainActivity.intentToStartMe(this);
+        } else if (widgetId != 0 && widgetId != newWidgetId) {
+            restartIntent = MainActivity.intentToConfigure(this, newWidgetId);
+        } else if (widgetId == 0) {
+            widgetId = newWidgetId;
+            ApplicationPreferences.startEditing(this, widgetId);
+        }
+        if (restartIntent != null) {
+            widgetId = 0;
+            startActivity(restartIntent);
+            finish();
         }
     }
 
-    private void createAddButton() {
-        TypedValue value = new TypedValue();
-        getTheme().resolveAttribute(android.R.attr.dividerHorizontal, value, true);
-        LinearLayout footer = new LinearLayout(this, null, android.R.attr.buttonBarStyle);
-        footer.setOrientation(LinearLayout.VERTICAL);
-        footer.setShowDividers(LinearLayout.SHOW_DIVIDER_BEGINNING);
-        footer.setDividerPadding(0);
-        footer.setDividerDrawable(getResources().getDrawable(value.resourceId));
-        Button button = new Button(this, null, android.R.attr.buttonBarButtonStyle);
-        button.setText(R.string.prefs_add_widget);
-        button.setOnClickListener(new OnClickListener() {
-
-            public void onClick(View v) {
-                Intent resultValue = new Intent();
-                resultValue.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId);
-                setResult(RESULT_OK, resultValue);
-                EventAppWidgetProvider.updateWidget(WidgetConfigurationActivity.this,
-                        appWidgetId);
-                finish();
-            }
-        });
-        footer.addView(button, MATCH_PARENT, MATCH_PARENT);
-        setListFooter(footer);
+    private void restartIfNeeded() {
+        if (widgetId != ApplicationPreferences.getWidgetId(this) || !PermissionsUtil.arePermissionsGranted(this)) {
+            widgetId = 0;
+            startActivity(MainActivity.intentToStartMe(this));
+            finish();
+        }
     }
 
     @Override
     public void onBuildHeaders(List<Header> target) {
         loadHeadersFromResource(R.xml.preferences_header, target);
+        setTitle(ApplicationPreferences.getWidgetInstanceName(this));
     }
 
     @Override

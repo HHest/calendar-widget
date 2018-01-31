@@ -1,160 +1,243 @@
 package com.plusonelabs.calendar.calendar;
 
-import com.plusonelabs.calendar.model.Event;
+import android.content.ContentUris;
+import android.content.Context;
+import android.content.Intent;
+import android.provider.CalendarContract;
+import android.util.Log;
+
+import com.plusonelabs.calendar.BuildConfig;
+import com.plusonelabs.calendar.CalendarIntentUtil;
+import com.plusonelabs.calendar.DateUtil;
+import com.plusonelabs.calendar.prefs.InstanceSettings;
 
 import org.joda.time.DateTime;
-import org.joda.time.Days;
+import org.joda.time.DateTimeZone;
+import org.joda.time.LocalDateTime;
 
-public class CalendarEvent extends Event {
+public class CalendarEvent {
 
-	private int eventId;
-	private String title;
-	private DateTime endDate;
-	private int color;
-	private boolean allDay;
-	private String location;
-	private boolean alarmActive;
-	private boolean recurring;
-	private boolean spansMultipleDays;
-	private CalendarEvent originalEvent;
+    private final Context context;
+    private final int widgetId;
+    private final DateTimeZone zone;
+    private final boolean allDay;
 
-	public int getEventId() {
-		return eventId;
-	}
+    private int eventId;
+    private String title;
+    private DateTime startDate;
+    private DateTime endDate;
+    private int color;
+    private boolean mHasDefaultCalendarColor;
+    private String location;
+    private boolean alarmActive;
+    private boolean recurring;
 
-	public void setEventId(int eventId) {
-		this.eventId = eventId;
-	}
+    public CalendarEvent(Context context, int widgetId, DateTimeZone zone, boolean allDay) {
+        this.context = context;
+        this.widgetId = widgetId;
+        this.zone = zone;
+        this.allDay = allDay;
+    }
 
-	public String getTitle() {
-		return title;
-	}
+    public DateTime getStartDate() {
+        return startDate;
+    }
 
-	public void setTitle(String title) {
-		this.title = title;
-	}
+    public void setStartDate(DateTime startDate) {
+        this.startDate = allDay ? startDate.withTimeAtStartOfDay() : startDate;
+        fixEndDate();
+    }
 
-	public DateTime getEndDate() {
-		return endDate;
-	}
+    public void setStartMillis(long startMillis) {
+        this.startDate = dateFromMillis(startMillis);
+        fixEndDate();
+    }
 
-	public void setEndDate(DateTime endDate) {
-		this.endDate = endDate;
-	}
+    public long getStartMillis() {
+        return dateToMillis(startDate);
+    }
 
-	public int getColor() {
-		return color;
-	}
+    private DateTime dateFromMillis(long millis) {
+        return allDay ? fromAllDayMillis(millis) : new DateTime(millis, zone);
+    }
 
-	public void setColor(int color) {
-		this.color = color;
-	}
+    /**
+     * Implemented based on this answer: http://stackoverflow.com/a/5451245/297710
+     */
+    private DateTime fromAllDayMillis(long millis) {
+        String msgLog = "millis=" + millis;
+        DateTime fixed;
+        try {
+            DateTime utcDate = new DateTime(millis, DateTimeZone.UTC);
+            LocalDateTime ldt = new LocalDateTime()
+                    .withYear(utcDate.getYear())
+                    .withMonthOfYear(utcDate.getMonthOfYear())
+                    .withDayOfMonth(utcDate.getDayOfMonth())
+                    .withMillisOfDay(0);
+            int hour = 0;
+            while (zone.isLocalDateTimeGap(ldt)) {
+                Log.v("fixTimeOfAllDayEvent", "Local Date Time Gap: " + ldt + "; " + msgLog);
+                ldt = ldt.withHourOfDay(++hour);
+            }
+            fixed = ldt.toDateTime(zone);
+            msgLog += " -> " + fixed;
+            if (BuildConfig.DEBUG) {
+                Log.v("fixTimeOfAllDayEvent", msgLog);
+            }
+        } catch (org.joda.time.IllegalInstantException e) {
+            throw new org.joda.time.IllegalInstantException(msgLog + " caused by: " + e);
+        }
+        return fixed;
+    }
 
-	public boolean isAllDay() {
-		return allDay;
-	}
+    private void fixEndDate() {
+        if (endDate == null || !endDate.isAfter(startDate)) {
+            endDate = allDay ? startDate.plusDays(1) : startDate.plusSeconds(1);
+        }
+    }
 
-	public void setAllDay(boolean allDay) {
-		this.allDay = allDay;
-	}
+    public int getEventId() {
+        return eventId;
+    }
 
-	public void setLocation(String location) {
-		this.location = location;
-	}
+    public void setEventId(int eventId) {
+        this.eventId = eventId;
+    }
 
-	public String getLocation() {
-		return location;
-	}
+    public String getTitle() {
+        return title;
+    }
 
-	public void setAlarmActive(boolean active) {
-		this.alarmActive = active;
-	}
+    public void setTitle(String title) {
+        this.title = title;
+    }
 
-	public boolean isAlarmActive() {
-		return alarmActive;
-	}
+    public DateTime getEndDate() {
+        return endDate;
+    }
 
-	public void setRecurring(boolean recurring) {
-		this.recurring = recurring;
-	}
+    public void setEndDate(DateTime endDate) {
+        this.endDate = allDay ? endDate.withTimeAtStartOfDay() : endDate;
+        fixEndDate();
+    }
 
-	public boolean isRecurring() {
-		return recurring;
-	}
+    public void setEndMillis(long endMillis) {
+        this.endDate = dateFromMillis(endMillis);
+        fixEndDate();
+    }
 
-	public boolean isPartOfMultiDayEvent() {
-		return spansMultipleDays;
-	}
+    public long getEndMillis() {
+        return dateToMillis(endDate);
+    }
 
-	public void setSpansMultipleDays(boolean spansMultipleDays) {
-		this.spansMultipleDays = spansMultipleDays;
-	}
+    private long dateToMillis(DateTime date) {
+        return allDay ? toAllDayMillis(date) : date.getMillis();
+    }
 
-	public int daysSpanned() {
-		DateTime startMidnight = getStartDate().withTimeAtStartOfDay();
-		DateTime endMidnight = getEndDate().withTimeAtStartOfDay();
-		int days = Days.daysBetween(startMidnight, endMidnight).getDays();
-		if (!isAllDay() && !getEndDate().equals(endMidnight)) {
-			days++;
-		}
-		return days;
-	}
+    private long toAllDayMillis(DateTime date) {
+        DateTime utcDate = new DateTime(date.getYear(), date.getMonthOfYear(), date.getDayOfMonth(), 0, 0,
+                DateTimeZone.UTC);
+        return utcDate.getMillis();
+    }
 
-	public boolean isStartOfMultiDayEvent() {
-		return isPartOfMultiDayEvent() && getOriginalEvent().getStartDate().equals(getStartDate());
-	}
+    public int getColor() {
+        return color;
+    }
 
-	public boolean isEndOfMultiDayEvent() {
-		return isPartOfMultiDayEvent() && getOriginalEvent().getEndDate().equals(getEndDate());
-	}
+    public void setColor(int color) {
+        this.color = color;
+    }
 
-	public boolean spansOneFullDay() {
-		return getStartDate().plusDays(1).isEqual(endDate);
-	}
+    public boolean hasDefaultCalendarColor() {
+        return mHasDefaultCalendarColor;
+    }
 
-	public void setOriginalEvent(CalendarEvent originalEvent) {
-		this.originalEvent = originalEvent;
-	}
+    public void setDefaultCalendarColor() {
+        mHasDefaultCalendarColor = true;
+    }
 
-	public CalendarEvent getOriginalEvent() {
-		return originalEvent;
-	}
+    public boolean isAllDay() {
+        return allDay;
+    }
 
-	public int compareTo(CalendarEvent otherEntry) {
-		if (isSameDay(otherEntry.getStartDate())) {
-			if (allDay) {
-				return -1;
-			} else if (otherEntry.allDay) {
-				return 1;
-			}
-		}
-		return super.compareTo(otherEntry);
-	}
+    public void setLocation(String location) {
+        this.location = location;
+    }
 
-	@Override
-	protected CalendarEvent clone() {
-		CalendarEvent clone = new CalendarEvent();
-		clone.setStartDate(getStartDate());
-		clone.endDate = endDate;
-		clone.eventId = eventId;
-		clone.title = title;
-		clone.allDay = allDay;
-		clone.color = color;
-		clone.alarmActive = alarmActive;
-		clone.recurring = recurring;
-		clone.spansMultipleDays = spansMultipleDays;
-		return clone;
-	}
+    public String getLocation() {
+        return location;
+    }
 
-	@Override
-	public String toString() {
-		return "CalendarEvent [eventId=" + eventId + ", "
-				+ (title != null ? "title=" + title + ", " : "")
-				+ (endDate != null ? "endDate=" + endDate + ", " : "") + "color=" + color
-				+ ", allDay=" + allDay + ", alarmActive=" + alarmActive + ", ic_recurring_light="
-				+ recurring + ", spansMultipleDays=" + spansMultipleDays + ", "
-				+ (originalEvent != null ? "originalEvent=" + originalEvent + ", " : "")
-				+ (location != null ? "location=" + location : "") + "]";
-	}
+    public void setAlarmActive(boolean active) {
+        this.alarmActive = active;
+    }
 
+    public boolean isAlarmActive() {
+        return alarmActive;
+    }
+
+    public void setRecurring(boolean recurring) {
+        this.recurring = recurring;
+    }
+
+    public boolean isRecurring() {
+        return recurring;
+    }
+
+    @Override
+    public String toString() {
+        return "CalendarEvent [eventId=" + eventId
+                + (title != null ? ", title=" + title : "")
+                + ", startDate=" + getStartDate()
+                + (endDate != null ? ", endDate=" + endDate : "")
+                + ", color=" + color
+                + (mHasDefaultCalendarColor ? " is default" : "")
+                + ", allDay=" + allDay
+                + ", alarmActive=" + alarmActive
+                + ", recurring=" + recurring
+                + (location != null ? ", location=" + location : "") + "]";
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        CalendarEvent that = (CalendarEvent) o;
+        if (eventId != that.eventId || !startDate.equals(that.startDate)) {
+            return false;
+        }
+        return true;
+    }
+
+    @Override
+    public int hashCode() {
+        int result = eventId;
+        result += 31 * startDate.hashCode();
+        return result;
+    }
+
+    public boolean isActive() {
+        DateTime now = DateUtil.now(zone);
+        return startDate.isBefore(now) && endDate.isAfter(now);
+    }
+
+    public boolean isPartOfMultiDayEvent() {
+        return endDate.withTimeAtStartOfDay().isAfter(startDate.withTimeAtStartOfDay());
+    }
+
+    public InstanceSettings getSettings() {
+        return InstanceSettings.fromId(context, widgetId);
+    }
+
+    public Intent createOpenCalendarEventIntent() {
+        Intent intent = CalendarIntentUtil.createCalendarIntent();
+        intent.setData(ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId));
+        intent.putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, getStartMillis());
+        intent.putExtra(CalendarContract.EXTRA_EVENT_END_TIME, getEndMillis());
+        return intent;
+    }
 }

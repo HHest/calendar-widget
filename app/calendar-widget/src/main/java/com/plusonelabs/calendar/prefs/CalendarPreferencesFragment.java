@@ -1,8 +1,6 @@
 package com.plusonelabs.calendar.prefs;
 
 import android.content.ContentResolver;
-import android.content.SharedPreferences;
-import android.content.SharedPreferences.Editor;
 import android.database.Cursor;
 import android.graphics.LightingColorFilter;
 import android.graphics.drawable.Drawable;
@@ -20,80 +18,66 @@ import com.plusonelabs.calendar.R;
 import java.util.HashSet;
 import java.util.Set;
 
-import static com.plusonelabs.calendar.prefs.CalendarPreferences.PREF_ACTIVE_CALENDARS;
-
 public class CalendarPreferencesFragment extends PreferenceFragment {
 
-	private static final String CALENDAR_ID = "calendarId";
-	private static final String[] PROJECTION = new String[] { Calendars._ID,
-			Calendars.CALENDAR_DISPLAY_NAME, Calendars.CALENDAR_COLOR };
-	private Set<String> initialActiveCalendars;
+    private static final String CALENDAR_ID = "calendarId";
+    private static final String[] PROJECTION = new String[]{Calendars._ID,
+            Calendars.CALENDAR_DISPLAY_NAME, Calendars.CALENDAR_COLOR,
+            Calendars.ACCOUNT_NAME};
+    private Set<String> initialActiveCalendars;
 
-	@Override
-	public void onCreate(Bundle savedInstanceState) {
-		super.onCreate(savedInstanceState);
-		addPreferencesFromResource(R.xml.preferences_calendars);
-		SharedPreferences prefs = getPreferenceManager().getSharedPreferences();
-		initialActiveCalendars = prefs.getStringSet(PREF_ACTIVE_CALENDARS,
-				null);
-		populatePreferenceScreen(initialActiveCalendars);
-	}
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        addPreferencesFromResource(R.xml.preferences_calendars);
+        initialActiveCalendars = ApplicationPreferences.getActiveCalendars(getActivity());
+        populatePreferenceScreen(initialActiveCalendars);
+    }
 
     private void populatePreferenceScreen(Set<String> activeCalendars) {
         Cursor cursor = createLoadedCursor();
-		if (cursor == null) {
-			return;
-		}
-		for (int i = 0; i < cursor.getCount(); i++) {
-			cursor.moveToPosition(i);
-			CheckBoxPreference checkboxPref = new CheckBoxPreference(getActivity());
-			checkboxPref.setTitle(cursor.getString(1));
-			checkboxPref.setIcon(createDrawable(cursor.getInt(2)));
-			int calendarId = cursor.getInt(0);
-			checkboxPref.getExtras().putInt(CALENDAR_ID, calendarId);
-			checkboxPref.setChecked(activeCalendars == null
-					|| activeCalendars.contains(String.valueOf(calendarId)));
-			getPreferenceScreen().addPreference(checkboxPref);
-		}
-	}
+        if (cursor == null) {
+            return;
+        }
+        for (int i = 0; i < cursor.getCount(); i++) {
+            cursor.moveToPosition(i);
+            CheckBoxPreference checkboxPref = new CheckBoxPreference(getActivity());
+            checkboxPref.setTitle(cursor.getString(1));
+            checkboxPref.setSummary(cursor.getString(3));
+            checkboxPref.setIcon(createDrawable(cursor.getInt(2)));
+            int calendarId = cursor.getInt(0);
+            checkboxPref.getExtras().putInt(CALENDAR_ID, calendarId);
+            checkboxPref.setChecked(activeCalendars.isEmpty()
+                    || activeCalendars.contains(String.valueOf(calendarId)));
+            getPreferenceScreen().addPreference(checkboxPref);
+        }
+    }
 
-	@Override
-	public boolean onPreferenceTreeClick(PreferenceScreen preferenceScreen, Preference preference) {
-		return true;
-	}
+    @Override
+    public void onPause() {
+        super.onPause();
+        HashSet<String> selectedCalendars = getSelectedCalendars();
+        if (!selectedCalendars.equals(initialActiveCalendars)) {
+            ApplicationPreferences.setActiveCalendars(getActivity(), selectedCalendars);
+            EventAppWidgetProvider.updateEventList(getActivity());
+        }
+    }
 
-	@Override
-	public void onPause() {
-		super.onPause();
-		HashSet<String> selectedCalendars = getSelectedCalenders();
-		if (!selectedCalendars.equals(initialActiveCalendars)) {
-			persistSelectedCalendars(selectedCalendars);
-			EventAppWidgetProvider.updateEventList(getActivity());
-		}
-	}
-
-    private void persistSelectedCalendars(HashSet<String> prefValues) {
-        SharedPreferences prefs = getPreferenceManager().getSharedPreferences();
-		Editor editor = prefs.edit();
-        editor.putStringSet(PREF_ACTIVE_CALENDARS, prefValues);
-		editor.commit();
-	}
-
-    private HashSet<String> getSelectedCalenders() {
+    private HashSet<String> getSelectedCalendars() {
         PreferenceScreen preferenceScreen = getPreferenceScreen();
-		int prefCount = preferenceScreen.getPreferenceCount();
+        int prefCount = preferenceScreen.getPreferenceCount();
         HashSet<String> prefValues = new HashSet<>();
         for (int i = 0; i < prefCount; i++) {
-			Preference pref = preferenceScreen.getPreference(i);
-			if (pref instanceof CheckBoxPreference) {
-				CheckBoxPreference checkPref = (CheckBoxPreference) pref;
-				if (checkPref.isChecked()) {
-					prefValues.add(String.valueOf(checkPref.getExtras().getInt(CALENDAR_ID)));
-				}
-			}
-		}
-		return prefValues;
-	}
+            Preference pref = preferenceScreen.getPreference(i);
+            if (pref instanceof CheckBoxPreference) {
+                CheckBoxPreference checkPref = (CheckBoxPreference) pref;
+                if (checkPref.isChecked()) {
+                    prefValues.add(String.valueOf(checkPref.getExtras().getInt(CALENDAR_ID)));
+                }
+            }
+        }
+        return prefValues;
+    }
 
     private Drawable createDrawable(int color) {
         Drawable drawable = getResources().getDrawable(R.drawable.prefs_calendar_entry);
@@ -102,8 +86,8 @@ public class CalendarPreferencesFragment extends PreferenceFragment {
     }
 
     private Cursor createLoadedCursor() {
-		Uri.Builder builder = Calendars.CONTENT_URI.buildUpon();
-		ContentResolver contentResolver = getActivity().getContentResolver();
-		return contentResolver.query(builder.build(), PROJECTION, null, null, null);
-	}
+        Uri.Builder builder = Calendars.CONTENT_URI.buildUpon();
+        ContentResolver contentResolver = getActivity().getContentResolver();
+        return contentResolver.query(builder.build(), PROJECTION, null, null, null);
+    }
 }

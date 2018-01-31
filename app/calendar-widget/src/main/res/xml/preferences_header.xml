@@ -1,4 +1,4 @@
-<preference-headers xmlns:android="http://schemas.android.com/apk/res/android" >
+<preference-headers xmlns:android="http://schemas.android.com/apk/res/android">
 
     <header
         android:fragment="com.plusonelabs.calendar.prefs.AppearancePreferencesFragment"
@@ -8,6 +8,10 @@
         android:fragment="com.plusonelabs.calendar.prefs.EventDetailsPreferencesFragment"
         android:summary="@string/event_details_prefs_desc"
         android:title="@string/event_details_prefs" />
+    <header
+        android:fragment="com.plusonelabs.calendar.prefs.EventFiltersPreferencesFragment"
+        android:summary="@string/event_filters_prefs_desc"
+        android:title="@string/event_filters_prefs" />
     <header
         android:fragment="com.plusonelabs.calendar.prefs.CalendarPreferencesFragment"
         android:summary="@string/calendars_prefs_desc"
